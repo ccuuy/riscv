@@ -1,12 +1,16 @@
 [TOC]
+
 # 简化单周期riscv处理器的实现
+
 凭着感觉懵懵懂懂地居然真的独自完成了一个简化的riscv指令集处理器，虽说逻辑其实比较简单，但是由于实在没有系统学习过verilog，仿真的时候出现了好多bug，许多问题到最后虽然成功解决了，但还是没能搞清楚背后的原理，直到最后真的仿真通过的时候我甚至脑子都是懵的。把实现的过程在这里尽量具体地写一下，希望看到文章的人能够帮助我解答一些心中的疑惑，同时文章稍作修改后也会作为计算机组成原理实验报告的一部分上交。代码上传至<a href="https://github.com/ccuuy/riscv">riscv代码</a>
 
 ## 指令分析
+
 最初想要实现完整的riscv32i指令集，但由于试验任务的时间要求以及我个人能力的限制，最终只能摘选了18个进行实现。有条件跳转指令只实现了beq，无符号跳转指令实现了jal(并不完整)，对于I型指令中的加载指令以及S型指令，则没有实现半字、字节级的操作和无符号的操作。
 倘若之后有时间，会尝试实现完整的riscv32i指令集。
 
 ### 实现指令
+
 | 指令      | 指令说明 |指令类型|opcode|func3|
 | ----------- | ----------- | ----------- |----------- | ----------- |
 | jal      | 无条件跳转      |J型指令|1101111|
@@ -32,16 +36,22 @@
 具体理由在后面提到。
 
 ## 处理器总体思路
+
 为了能够之后可能进行的完整实现以及方便与课堂内容结合，我决定尽量完全按照黑皮书《计算机组成与设计 riscv版》进行实现
 下图为书中数据通路实现
 ![](https://img2022.cnblogs.com/blog/2687686/202211/2687686-20221118231720933-836790656.png)
 下面进行处理器实现时，所有的信号与模块都是与书中一一对应的，减轻了一些设计上的压力。
+
 ### 一些处理
+
 整个处理器的核心在于控制模块，控制模块获取`opcode[6:0]`信号就可以发出控制其余所有模块的信号。
+
 #### ALU与func3
+
 为了简化操作，我们将ALU的操作码直接与指令的func3对应，在这个简化指令集中，这样实际上完全可行，但是问题是需要将sub和add进行区分，我们在这里实际上无需背离原版指令集，只要给ALUControl一个func7信号的一位让其区分add和sub即可，但是我选择不这么做，我认为区分add与sub的func3是个更优雅的选择。
 
 ### 分块拆解
+
 直接实现未免过于困难，于是尝试先把每一个部分进行实现，最后整合成完整的数据通路。
 下面列一下要实现的所有小模块。
 |模块|说明|
@@ -60,9 +70,13 @@ ImmGen|立即数生成器
 RigisterWriteMux|寄存器写入数据多选器
 
 ## 处理器完整实现
+
 ### 各分模块实现
+
 接下来我们一步步实现每一个模块
+
 #### InstrMem
+
 类型|信号|注释
 |---|---|---|
 input|[7:0]addr|指令地址(总共可存${2^8}$个指令)|
@@ -71,12 +85,13 @@ output|[31:0]instr|地址对应的指令|
 指令存储器相对比较容易实现，只要根据输入的地址取出相对应的指令即可。
 
 代码实现
+
 ```verilog
 module InstrMem(
-	input [7:0]addr,
-	output [31:0]instr
-    );	
-	reg[31:0] rom[255:0];	
+ input [7:0]addr,
+ output [31:0]instr
+    ); 
+ reg[31:0] rom[255:0]; 
     //rom进行初始化
     initial begin
         rom[0] = 32'b00000000000100000000000010010011;
@@ -84,13 +99,14 @@ module InstrMem(
         rom[2] = 32'b00000000001000010000000110110011;
         rom[3] = 32'b01000000000100011000000110110011;    
     end
-	
+ 
     assign instr = rom[addr];
 
 endmodule
 ```
 
 #### DataMem
+
 类型|信号|注释
 |---|---|---|
 input|clk|时钟信号|
@@ -106,42 +122,44 @@ output|[31:0] ReadData|读出数据|
 数据存储器地址来自主ALU运算。
 
 代码实现：
+
 ```verilog
 module DataMem(
-	input clk,
-	input rst_n,	
-	input MemWrite,
-	input MemRead,
-	input [7:0]Address,
-	input [31:0] WriteData,
-	output [31:0] ReadData
+ input clk,
+ input rst_n, 
+ input MemWrite,
+ input MemRead,
+ input [7:0]Address,
+ input [31:0] WriteData,
+ output [31:0] ReadData
     );
-	
-	
-	reg [31:0]ram[255:0];
-	assign ReadData = ram[Address];
+ 
+ 
+ reg [31:0]ram[255:0];
+ assign ReadData = ram[Address];
 
-	always@(posedge clk)
-	begin
-		if(!rst_n)// for循环不知道为什么会报错，仿真暂且这样初始化
-			begin //对每一个存储器都置零
-				ram[0]<=`zero_word;
-				ram[1]<=`zero_word;
-				ram[2]<=`zero_word;
-				ram[3]<=`zero_word;
-				ram[4]<=`zero_word;
-				ram[5]<=`zero_word;
-				ram[6]<=`zero_word;
-			        ······//略去
-			end
-		else if(MemWrite)
-			ram[Address]<=WriteData;	
-	end
+ always@(posedge clk)
+ begin
+  if(!rst_n)// for循环不知道为什么会报错，仿真暂且这样初始化
+   begin //对每一个存储器都置零
+    ram[0]<=`zero_word;
+    ram[1]<=`zero_word;
+    ram[2]<=`zero_word;
+    ram[3]<=`zero_word;
+    ram[4]<=`zero_word;
+    ram[5]<=`zero_word;
+    ram[6]<=`zero_word;
+           ······//略去
+   end
+  else if(MemWrite)
+   ram[Address]<=WriteData; 
+ end
 
 endmodule
 ```
 
 #### Control
+
 这里几乎是整个处理器的核心模块，既然是实验结束后复盘，可以先从这里写起，方便之后模块输入输出的描述。
 
 类型|信号|注释
@@ -155,8 +173,8 @@ output|[7:0]Address|数据存储器地址|
 output|[31:0] WriteData|写入数据|
 output|[31:0] ReadData|读出数据|
 
-
 代码实现：
+
 ```verilog
 module Control(
     input [6:0] opcode,
@@ -232,62 +250,69 @@ endmodule
 ```
 
 #### ImmGen
+
 类型|信号|注释
 |---|---|---|
 input|[31:0]instr|指令|
 output|[31:0]imme|立即数|
 
 输入指令输出符号扩展之后的立即数，这个模块事实上是第一个我实现的模块，这时候我还抱着完成完整指令集实现的心态，把所有指令的立即数都进行了生成，然而毫无疑问后来失败跑路了，但这个模块见证了我曾经的雄心壮志（笑
+
 ```verilog
-`define		lui			7'b0110111
-`define		auipc			7'b0010111
-`define		jal			7'b1101111
-`define		jalr			7'b1100111
-`define		B_type			7'b1100011
-`define		load			7'b0000011
-`define		store			7'b0100011
-`define		I_type			7'b0010011
-`define		R_type			7'b0110011
+`define  lui   7'b0110111
+`define  auipc   7'b0010111
+`define  jal   7'b1101111
+`define  jalr   7'b1100111
+`define  B_type   7'b1100011
+`define  load   7'b0000011
+`define  store   7'b0100011
+`define  I_type   7'b0010011
+`define  R_type   7'b0110011
 
 module ImmGen(
-	input [31:0]instr,
-	output [31:0]imme
-	);
-	 
-	wire I;
-	wire U;
-	wire J;
-	wire B;
-	wire S;
-	
-	wire [31:0]I_imme;
-	wire [31:0]U_imme;
-	wire [31:0]J_imme;
-	wire [31:0]B_imme;
-	wire [31:0]S_imme;
-	
-	assign I=(instr[6:0]==`jalr) | (instr[6:0]==`load) | (instr[6:0]==`I_type);
-	assign U=(instr[6:0]==`lui) | (instr[6:0]==`auipc);
-	assign J=(instr[6:0]==`jal);
-	assign B=(instr[6:0]==`B_type);
-	assign S=(instr[6:0]==`store);
-	
-	//立即数符号扩展
-	assign I_imme = {{20{instr[31]}},instr[31:20]}; 
-	assign U_imme = {instr[31:12],{12{1'b0}}};
-	assign J_imme = {{12{instr[31]}},instr[19:12],instr[20],instr[30:21],1'b0};   
-	assign B_imme = {{20{instr[31]}},instr[7],instr[30:25],instr[11:8],1'b0};
-	assign S_imme = {{20{instr[31]}},instr[31:25],instr[11:7]}; 
-	
-	assign imme = I ? I_imme : U ? U_imme : J ? J_imme : B ? B_imme : S ? S_imme : 32'd0;
+ input [31:0]instr,
+ output [31:0]imme
+ );
+  
+ wire I;
+ wire U;
+ wire J;
+ wire B;
+ wire S;
+ 
+ wire [31:0]I_imme;
+ wire [31:0]U_imme;
+ wire [31:0]J_imme;
+ wire [31:0]B_imme;
+ wire [31:0]S_imme;
+ 
+ assign I=(instr[6:0]==`jalr) | (instr[6:0]==`load) | (instr[6:0]==`I_type);
+ assign U=(instr[6:0]==`lui) | (instr[6:0]==`auipc);
+ assign J=(instr[6:0]==`jal);
+ assign B=(instr[6:0]==`B_type);
+ assign S=(instr[6:0]==`store);
+ 
+ //立即数符号扩展
+ assign I_imme = {{20{instr[31]}},instr[31:20]}; 
+ assign U_imme = {instr[31:12],{12{1'b0}}};
+ assign J_imme = {{12{instr[31]}},instr[19:12],instr[20],instr[30:21],1'b0};   
+ assign B_imme = {{20{instr[31]}},instr[7],instr[30:25],instr[11:8],1'b0};
+ assign S_imme = {{20{instr[31]}},instr[31:25],instr[11:7]}; 
+ 
+ assign imme = I ? I_imme : U ? U_imme : J ? J_imme : B ? B_imme : S ? S_imme : 32'd0;
 
 
 endmodule
 ```
+
 #### PC
+
 事实上这两个模块我的实现遇到了未知的错误，在整合的数据通路中我需要保存当前的地址，我定义了wire类型的两个变量PCin和PCout，它们来存储经过多选器前后的地址，但是当我简单地`assign PCin = PCout;`时,令人难过的事情发生了。PC多选器变得一团糟，当最初的`PCin = 8'b0`被输入进去之后，输出的PCout信号竟然是`8'h00xx`未知态。经过长时间的debug，只是发现了将语句改为`assign PCin = instrAddress;//由PC产生的直接给入指令存储器的信号`时，仿真波形恢复了正常。
+
 ##### PCMUx
+
 根据branch信息判断是否要进行跳转，跳转的话输出当前指令地址加立即数，不跳转则直接输出指令地址加一。
+
 ```verilog
 module PC_mux(
     input [7:0] PCin,
@@ -300,8 +325,11 @@ assign PCout = branch ? (PCin + imm) : (PCin + 8'b00000001);
 
 endmodule
 ```
+
 ##### PC
+
 将输入地址输出，第一次或复位信息传来时输出指令地址为0。
+
 ```verilog
 module PC(
     input clk,
@@ -320,21 +348,28 @@ end
 
 endmodule
 ```
+
 #### ALU
+
 ##### ALUControl
+
 这个模块用于生成ALU控制信号
+
 ```verilog
 module ALUControl(
     input ALUop,
     input [2:0]func3,
     output [2:0]ALUControlOp
     );
-	
+ 
     assign ALUControlOp = ALUop ? func3 : 3'b000;
 endmodule
 ```
+
 ##### ALUMux
+
 这个模块用于选择ALU输入信号来源
+
 ```verilog
 module ALUMux(
     input ALUSrc,//0时ReadData2
@@ -348,8 +383,11 @@ module ALUMux(
 
 endmodule
 ```
+
 ##### ALU
+
 这是ALU运算模块，后面会有快速加法的改进。
+
 ```verilog
 module ALU (
             input [31: 0]A,
@@ -417,9 +455,13 @@ end
 
  endmodule
 ```
+
 #### Rigisters
+
 ##### RigisterWithMux
+
 选择寄存器写入信息的来源。
+
 ```verilog
 module RigisterWriteMux(
     input [31:0] DataFromRam,
@@ -431,83 +473,89 @@ module RigisterWriteMux(
     assign DataToReg = MemToReg ? DataFromRam : ALU_result;
 endmodule
 ```
+
 ##### Rigisters
+
 这是寄存器模块。
 为了仿真成功先为每一寄存器赋值0。
+
 ```verilog
 `define zero_word 32'b0
 module Registers(
-	input clk,
-	input rst_n,
-	input RegWrite, // 写使能
-	input [4:0]ReadRegister1, 
-	input [4:0]ReadRegister2,
+ input clk,
+ input rst_n,
+ input RegWrite, // 写使能
+ input [4:0]ReadRegister1, 
+ input [4:0]ReadRegister2,
 
-	input [4:0]WriteRegister, // 写入地址
-	input [31:0]WriteData, // 写入数据
-	
-	output [31:0]ReadData1,
-	output [31:0]ReadData2
+ input [4:0]WriteRegister, // 写入地址
+ input [31:0]WriteData, // 写入数据
+ 
+ output [31:0]ReadData1,
+ output [31:0]ReadData2
     );
-	
-	reg [4:0] regs [31:0];
-	
+ 
+ reg [4:0] regs [31:0];
+ 
 
-	//read
+ //read
 
-	assign ReadData1=(ReadRegister1==5'd0)?32'b0: regs[ReadRegister1];
-	assign ReadData2=(ReadRegister2==5'd0)?32'b0: regs[ReadRegister2];
+ assign ReadData1=(ReadRegister1==5'd0)?32'b0: regs[ReadRegister1];
+ assign ReadData2=(ReadRegister2==5'd0)?32'b0: regs[ReadRegister2];
 
 
-	//write
-		
-	always@(posedge clk)
-	begin
+ //write
+  
+ always@(posedge clk)
+ begin
         if(!rst_n)
-			begin
-				regs[0]<=`zero_word;
-				regs[1]<=`zero_word;
-				regs[2]<=`zero_word;
-				regs[3]<=`zero_word;
-				regs[4]<=`zero_word;
-				regs[5]<=`zero_word;
-				regs[6]<=`zero_word;
-				regs[7]<=`zero_word;
-				regs[8]<=`zero_word;
-				regs[9]<=`zero_word;
-				regs[10]<=`zero_word;
-				regs[11]<=`zero_word;
-				regs[12]<=`zero_word;
-				regs[13]<=`zero_word;
-				regs[14]<=`zero_word;
-				regs[15]<=`zero_word;
-				regs[16]<=`zero_word;
-				regs[17]<=`zero_word;
-				regs[18]<=`zero_word;
-				regs[19]<=`zero_word;
-				regs[20]<=`zero_word;
-				regs[21]<=`zero_word;
-				regs[22]<=`zero_word;
-				regs[23]<=`zero_word;
-				regs[24]<=`zero_word;
-				regs[25]<=`zero_word;
-				regs[26]<=`zero_word;
-				regs[27]<=`zero_word;
-				regs[28]<=`zero_word;
-				regs[29]<=`zero_word;
-				regs[30]<=`zero_word;
-				regs[31]<=`zero_word;
-			end
-		else if(RegWrite & (WriteRegister!=0))
-			regs[WriteRegister]<=WriteData;	
-	end
-		
+   begin
+    regs[0]<=`zero_word;
+    regs[1]<=`zero_word;
+    regs[2]<=`zero_word;
+    regs[3]<=`zero_word;
+    regs[4]<=`zero_word;
+    regs[5]<=`zero_word;
+    regs[6]<=`zero_word;
+    regs[7]<=`zero_word;
+    regs[8]<=`zero_word;
+    regs[9]<=`zero_word;
+    regs[10]<=`zero_word;
+    regs[11]<=`zero_word;
+    regs[12]<=`zero_word;
+    regs[13]<=`zero_word;
+    regs[14]<=`zero_word;
+    regs[15]<=`zero_word;
+    regs[16]<=`zero_word;
+    regs[17]<=`zero_word;
+    regs[18]<=`zero_word;
+    regs[19]<=`zero_word;
+    regs[20]<=`zero_word;
+    regs[21]<=`zero_word;
+    regs[22]<=`zero_word;
+    regs[23]<=`zero_word;
+    regs[24]<=`zero_word;
+    regs[25]<=`zero_word;
+    regs[26]<=`zero_word;
+    regs[27]<=`zero_word;
+    regs[28]<=`zero_word;
+    regs[29]<=`zero_word;
+    regs[30]<=`zero_word;
+    regs[31]<=`zero_word;
+   end
+  else if(RegWrite & (WriteRegister!=0))
+   regs[WriteRegister]<=WriteData; 
+ end
+  
 
 endmodule
 
 ```
+
 #### BranchJudge
+
 通过控制器生成的isbranch和ALU运算得到的Zero判断是否跳转
+
 ```verilog
 module BranchJudge(
     input [1:0]Branch,
@@ -531,13 +579,17 @@ end
 
 endmodule
 ```
+
 ### 模块整合
+
 这里我们将完整的CPU分成两个存储器与其他部件组成的数据通路
+
 #### DataPath
+
 ```verilog
 module DataPath(
     input clk,
-	input rst_n,
+ input rst_n,
     input [31:0]Instruction,
     input [31:0] DataFromRam,//从DataMem中取得的数据
 
@@ -563,8 +615,8 @@ module DataPath(
     wire RegWrite;
     wire ALUop;
 
-	wire [31:0]ReadData1; // 寄存器读出数据
-	wire [31:0]ReadData2;
+ wire [31:0]ReadData1; // 寄存器读出数据
+ wire [31:0]ReadData2;
 
     wire [2:0]ALUControlOp; // ALU_control通过ALUop对ALU的命令
     
@@ -596,11 +648,13 @@ module DataPath(
 
 endmodule
 ```
+
 #### riscvWithMem
+
 ```verilog
 module RiscvWithMem(
     input clk,
-	input rst_n,
+ input rst_n,
     output [31:0] OutIO
     );
 
@@ -608,10 +662,10 @@ module RiscvWithMem(
     wire [31:0]NextInstr;
 
     wire MemWrite;
-	wire MemRead;
-	wire [7:0] DataAddress;
-	wire [31:0] WriteData;
-	wire [31:0] ReadData;
+ wire MemRead;
+ wire [7:0] DataAddress;
+ wire [31:0] WriteData;
+ wire [31:0] ReadData;
 
 
     DataPath DataPath(clk, rst_n, NextInstr, ReadData, MemWrite, MemRead, DataAddress, WriteData, InstrAddress);
@@ -621,42 +675,53 @@ module RiscvWithMem(
     InstrMem InstrMem(InstrAddress, NextInstr);
 endmodule
 ```
+
 ## 存在的问题
+
 ### jal
+
 我没有理解这个命令如何在数据通路中实现实现，PC地址+4怎样被存放到寄存器中，事实上我没有对这个进行处理，这个指令并不完善。
+
 ### 控制模块
+
 由于目前实现命令较少，没有对逻辑进行简化，而只使用了几个case对不同类型的指令发出不同的控制信号。
+
 ## 仿真检验
+
 接下来我们对指令进行仿真执行，看一下我们的cpu是否可以正常运行。
+
 ```verilog
 `timescale 1ns / 1ps
 
 
 module test;
 
-	// Inputs
-	reg clk;
-	reg rst_n;
+ // Inputs
+ reg clk;
+ reg rst_n;
 
-	RiscvWithMem rrrrrrr (
-		.clk(clk), 
-		.rst_n(rst_n)
-	);
+ RiscvWithMem rrrrrrr (
+  .clk(clk), 
+  .rst_n(rst_n)
+ );
     always #5 clk= ~clk;
-	initial begin
-		clk = 0;
-		rst_n = 0;
+ initial begin
+  clk = 0;
+  rst_n = 0;
 
-		#10;
-		rst_n=1;
+  #10;
+  rst_n=1;
         
 
-	end
+ end
       
 endmodule
 ```
+
 ### add sub
+
 下面是仿真代码。
+
 ```
 addi x1,x0,1
 add x2,x1,x1
@@ -679,9 +744,12 @@ add x8,x7,x3
 01000000010000110000001110110011
 00000000001100111000010000110011
 ```
+
 ![](https://img2022.cnblogs.com/blog/2687686/202211/2687686-20221122214910126-28635050.png)
 仿真大成功
+
 ### jal beq
+
 ```
 addi x1,x0,1
 addi x2,x0,2
@@ -702,10 +770,12 @@ addi x6,x0,6
 00000000010100100010010001100011
 00000000011000000000001100010011
 ```
+
 ![](https://img2022.cnblogs.com/blog/2687686/202211/2687686-20221122223820273-2089196395.png)
 仿真第一列表示是否是跳转指令，第二列表示是否跳转，第三列是指令内容，我们的跳转指令也与预期相符。
 
 ### ld和sd指令
+
 ```
 addi x2,x0,2
 sw x2,0,x0
@@ -715,13 +785,16 @@ lw x1,0,x0
 00000000001000000010000000100011
 00000000000000000010000010000011
 ```
+
 ![](https://img2022.cnblogs.com/blog/2687686/202211/2687686-20221123192912839-386097196.png)
 上图为register
 下图为DataMem
 ![](https://img2022.cnblogs.com/blog/2687686/202211/2687686-20221123193002428-25685905.png)
 
 ## 改进
+
 ### 超前进位加法
+
 ```verilog
 module adder(X,Y,Cin,F,Cout);
 
@@ -732,6 +805,7 @@ module adder(X,Y,Cin,F,Cout);
   assign Cout = (X ^ Y) & Cin | X & Y;
 endmodule
 ```
+
 ```verilog
 module adder_4(
       input [4:1] x,
@@ -796,6 +870,7 @@ assign Gm = g4 ^ (p4 & g3) ^ (p4 & p3 & g2) ^ (p4 & p3 & p2 & g1);
 
 endmodule
 ```
+
 ```verilog
 module adder32(A,B,S,C32);
      input [32:1] A;
@@ -829,6 +904,7 @@ module adder32(A,B,S,C32);
 
 endmodule
 ```
+
 ```verilog
 module cla4(c0,c1,c2,c3,c4,p1,p2,p3,p4,g1,g2,g3,g4);
 
@@ -842,6 +918,7 @@ module cla4(c0,c1,c2,c3,c4,p1,p2,p3,p4,g1,g2,g3,g4);
 
 endmodule
 ```
+
 ```verilog
 module cla16(A,B,c0,S,px,gx);
     input [16:1] A;
@@ -902,7 +979,19 @@ module cla16(A,B,c0,S,px,gx);
 
 endmodule
 ```
+
 ## 输入输出
+
 做一个简单的输出，
 在DataMem里加一个输出`output IO_out = ram[0];`，再放到最顶层模块的输出里，可以把输出设备绑到数据存储器0x00位置
 具体实现已经包含在上面的代码中
+
+## 约束文件
+
+我们的简单处理器需要在安路FPGA上运行
+下面是约束文件
+我们把时钟与FPGA的时钟绑定，把rst_n对应到第一个开关，把输出的后16位对应到FPGA的小灯上。
+
+```adc
+
+```
